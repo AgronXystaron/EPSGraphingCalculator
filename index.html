@@ -1,0 +1,260 @@
+<!doctype html>
+<html>
+    <head>
+        <!-- Pyodide require -->
+         <script src="https://cdn.jsdelivr.net/pyodide/v0.29.1/full/pyodide.js"></script>
+
+        <!-- Desmos require -->
+        <script src="https://www.desmos.com/api/v1.6/calculator.js?apiKey=dcb31709b452b1cf9dc26972add0fda6"></script>
+
+        <!-- Monaco Editor -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+
+        <style>
+            html, body {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100%;
+            }
+            #calculator {
+                width: 50%;
+                height: 100%;
+                float: right;
+            }
+            #editor-container {
+                display: flex;
+                flex-direction: column;
+                width: 50%;
+                height: 100%;
+                float: left;
+            }
+            #editor {
+                flex: 1;
+                min-height: 0;
+            }
+            .terminal {
+                width: 100%;
+                height: 30%;
+                overflow: auto;
+                border-top: 1px solid #ccc;  
+                font-family: 'Courier New', Courier, monospace;
+            }
+            .upperContainer {
+                height: 100%;
+            }
+            .controls {
+                padding: 8px;
+                display: flex;
+                gap: 8px;
+                border-top: 1px solid #ccc;
+            }
+            button:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+        </style>
+    </head>
+    <body>
+        <!-- init windows-->
+        <div id="editor-container">
+            <div id="editor"></div>
+            <div id="output" class="terminal"> 
+            </div>
+            <div class="controls">
+                <button id="runBtn" disabled>Run</button>
+                <button onclick="saveFile()">Save .py</button>
+                <button onclick="clearOutput()">Clear Output</button>
+                <input type="file" accept=".py" onchange="loadFile(event)" />
+            </div>
+        </div>
+        <div id="calculator"></div>
+        
+        <script>
+            let calcElement = document.getElementById('calculator');
+            let calculator = Desmos.GraphingCalculator(calcElement, {expressions: false});
+            let pyodide;
+
+            // init monaco editor
+            let editor;
+            require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
+            require(['vs/editor/editor.main'], () => {
+                editor = monaco.editor.create(document.getElementById('editor'), {
+                    value: `print('Hello World!')`,
+                    language: 'python',
+                    theme: 'vs-dark',
+                    automaticLayout: true,
+                    fontSize: 14
+                });
+
+                // prebuilt functions intellisense init
+                const pythonFunctions = [
+                {
+                    label: 'line(id, origin, slope)',
+                    kind: monaco.languages.CompletionItemKind.Function,
+                    documentation: 'Graphs a line',
+                    insertText: 'line()',
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                },
+                {
+                    label: 'circle(id, origin, radius, xStretch, yStretch)',
+                    kind: monaco.languages.CompletionItemKind.Function,
+                    documentation: 'Graphs a line segment',
+                    insertText: 'circle()',
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                },
+                ];
+
+                monaco.languages.registerCompletionItemProvider('python', {
+                    provideCompletionItems: (model, position) => {
+                        // You can add logic here to filter suggestions based on context if needed
+                        const suggestions = pythonFunctions.map(func => ({
+                            ...func,
+                            range: {
+                                startLineNumber: position.lineNumber,
+                                endLineNumber: position.lineNumber,
+                                startColumn: model.getWordUntilPosition(position).startColumn,
+                                endColumn: model.getWordUntilPosition(position).endColumn
+                            }
+                        }));
+                        return { suggestions: suggestions };
+                    }
+                });
+            });
+
+            // file io
+            function saveFile() {
+                const blob = new Blob([editor.getValue()], { type: 'text/x-python' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = prompt("Enter your file name.", "EPSGraph").concat('.py');
+                a.click();
+            }
+
+            function loadFile(event) {
+                const reader = new FileReader();
+                reader.onload = e => editor.setValue(e.target.result);
+                reader.readAsText(event.target.files[0]);
+            }
+
+            function clearOutput() {
+                const output = document.getElementById("output");
+                output.innerHTML = "";
+            }
+
+            // pyodide
+            function handleOutput(line){
+                const output = document.getElementById("output");
+                output.innerHTML += line+"<br>";
+            }
+
+            var output = document.getElementById("output");
+            const callback = (mutationsList, observer) => {
+                for (const mutation of mutationsList) {
+                    if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                        var isScrolledToBottom = output.scrollHeight - output.clientHeight <= output.scrollTop + 1;
+                        if(!isScrolledToBottom) {
+                            output.scrollTop = output.scrollHeight - output.clientHeight;
+                        }
+                    }
+                }
+            };
+
+            const observer = new MutationObserver(callback);
+            observer.observe(output, { 
+                childList: true,      // Observe direct children
+                subtree: true,        // Observe all descendants
+                characterData: true   // Observe text changes
+            });
+
+            async function Setup(){ 
+                pyodide = await loadPyodide();
+                await pyodide.loadPackage(['numpy']);
+                pyodide.setStdout({ batched: (msg) => handleOutput(msg) });
+                /* pyodide.globals.set("lineSegment", function(_id, p1, p2) {
+                    const x1 = p1[0]; const y1 = p1[1];
+                    const x2 = p2[0]; const y2 = p2[1];
+                    const m = (y2-y1)/(x2-x1);
+
+                    function solveB() {
+                        const mx = m*x1;
+                        return y1-mx;
+                    }
+                    const b = solveB();
+
+                    //calculator.setExpression({id: _id, latex: `y={${x1}<x<${x2}:${m}x+${b}}`});
+                    calculator.setExpression({id: _id, latex: `{0<x<2:${m}x+${b}}`});
+
+                    console.log(m, b, x1, x2);
+                }); */
+                pyodide.globals.set("line", function(_id, origin, m){
+                    const x = origin[0]; const y = origin[1];
+
+                    function solveB() {
+                        const mx = m*x;
+                        return y-mx;
+                    }
+                    const b = solveB();
+
+                    calculator.setExpression({id: _id, latex: `y=${m}x+${b}`});
+                    return JSON.stringify({
+                        "origin": origin,
+                        "slope": m,
+                        "intercept": b,
+                        "lines": [
+                            _id
+                        ]
+                    })
+                });
+                pyodide.globals.set("circle", function(_id, origin, radius, xStretch, yStretch) {
+                    const x = origin[0]; const y = origin[1];
+                    xStretch = xStretch || 1;
+                    yStretch = yStretch || 1;
+
+                    calculator.setExpression({id: _id, latex: `${xStretch}(x-${x})^2+${yStretch}(y-${y})^2=${radius}^2`});
+                    return {
+                        "origin": origin,
+                        "radius": radius,
+                        "xStretch": xStretch,
+                        "yStretch": yStretch,
+                        "lines": [
+                            _id
+                        ],
+                    }
+                });
+                /*pyodide.globals.set("square", {
+                    "fromCorner": function(_id, point, sideLength){
+                        for (let i = 0; i<4; i++) {
+
+                        }
+                    },
+                    "fromCenter": function(){
+
+                    }
+                });
+                pyodide.globals.set("rectangle", {
+                    
+                });*/
+            }
+
+            function Engage(){
+                const runBtn = document.getElementById('runBtn');
+                runBtn.onclick = function(){
+                    try {
+                        calculator.setBlank();
+                        pyodide.runPython(editor.getValue());
+                    } 
+                    catch(errMsg) {
+                        const tempElement = document.createElement("div")
+                        tempElement.textContent = errMsg;
+                        handleOutput(tempElement.innerHTML.replace(/\n/g, '<br>\n'));
+                        tempElement.remove();
+                    }
+                };
+                runBtn.disabled = false;
+            }
+
+            Setup().then(Engage);
+        </script>
+    </body>
+</html>
