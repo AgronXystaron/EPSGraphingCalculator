@@ -171,70 +171,84 @@
                 pyodide = await loadPyodide();
                 await pyodide.loadPackage(['numpy']);
                 pyodide.setStdout({ batched: (msg) => handleOutput(msg) });
-                /* pyodide.globals.set("lineSegment", function(_id, p1, p2) {
-                    const x1 = p1[0]; const y1 = p1[1];
-                    const x2 = p2[0]; const y2 = p2[1];
-                    const m = (y2-y1)/(x2-x1);
 
-                    function solveB() {
-                        const mx = m*x1;
-                        return y1-mx;
+                pyodide.globals.set("line", {
+                    "slopeInt": function(_id, m, b){
+                        return JSON.stringify({
+                            "slope": m,
+                            "intercept": b,
+                            "id": _id,
+                            "setExpression": {id: _id, latex: `y=${m}x+${b}`}
+                        })
+                    },
+                    "pointSlope": function(_id, p1, m){
+                        return JSON.stringify({
+                            "slope": m,
+                            "point": p1,
+                            "id": _id,
+                            "setExpression": {id: _id, latex: `y-${p1[1]}=${m}(x-${p1[0]})`}
+                        })
                     }
-                    const b = solveB();
+                })
 
-                    //calculator.setExpression({id: _id, latex: `y={${x1}<x<${x2}:${m}x+${b}}`});
-                    calculator.setExpression({id: _id, latex: `{0<x<2:${m}x+${b}}`});
-
-                    console.log(m, b, x1, x2);
-                }); */
-                pyodide.globals.set("line", function(_id, origin, m){
-                    const x = origin[0]; const y = origin[1];
-
-                    function solveB() {
-                        const mx = m*x;
-                        return y-mx;
-                    }
-                    const b = solveB();
-
-                    calculator.setExpression({id: _id, latex: `y=${m}x+${b}`});
-                    return JSON.stringify({
-                        "origin": origin,
-                        "slope": m,
-                        "intercept": b,
-                        "lines": [
-                            _id
-                        ]
-                    })
-                });
                 pyodide.globals.set("circle", function(_id, origin, radius, xStretch, yStretch) {
+                    console.log(typeof _id, typeof origin, typeof radius, typeof xStretch, typeof yStretch)
                     const x = origin[0]; const y = origin[1];
                     xStretch = xStretch || 1;
                     yStretch = yStretch || 1;
 
-                    calculator.setExpression({id: _id, latex: `${xStretch}(x-${x})^2+${yStretch}(y-${y})^2=${radius}^2`});
-                    return {
+                    return JSON.stringify({
                         "origin": origin,
                         "radius": radius,
                         "xStretch": xStretch,
                         "yStretch": yStretch,
-                        "lines": [
-                            _id
-                        ],
-                    }
+                        "id": _id,
+                        "setExpression": {id: _id, latex: `${xStretch}(x-${x})^2+${yStretch}(y-${y})^2=${radius}^2`}
+                    })
                 });
-                /*pyodide.globals.set("square", {
-                    "fromCorner": function(_id, point, sideLength){
-                        for (let i = 0; i<4; i++) {
+                pyodide.globals.set("vector", {
+                    "fromPoints": function(_id, p1, p2){
+                        const components = [p2[0]-p1[0], p2[1]-p1[1]]
+                        const magnitude = Math.sqrt(((p2[0]-p1[0])**2)+((p2[1]-p1[1])**2))
+                        const unit = [components[0]/magnitude, components[1]/magnitude]
 
-                        }
+                        calculator.setExpression({id: _id, latex: `[(${p1[0]}, ${p1[1]}), (${p2[0]}, ${p2[1]})]`, lines: true})
+
+                        return JSON.stringify({
+                            "origin": p1,
+                            "magnitude": magnitude,
+                            "unit": unit,
+                            "id": _id,
+                            "setExpression": {id: _id, latex: `[(${p1[0]}, ${p1[1]}), (${p2[0]}, ${p2[1]})]`, lines: true}
+                        })
                     },
-                    "fromCenter": function(){
+                    "componentForm": function(_id, origin, components){
+                        const xNew = origin[0]+components[0]
+                        const yNew = origin[1]+components[1]
 
+                        const magnitude = Math.sqrt((components[0]**2)+(components[1]**2))
+                        const unit = [components[0]/magnitude, components[1]/magnitude]                      
+
+                        return JSON.stringify({
+                            "origin": origin,
+                            "magnitude": magnitude,
+                            "unit": unit,
+                            "id": _id,
+                            "setExpression": {id: _id, latex: `[(${origin[0]}, ${origin[1]}), (${xNew}, ${yNew})]`, lines: true}
+                        })
                     }
-                });
-                pyodide.globals.set("rectangle", {
-                    
-                });*/
+                })
+                pyodide.globals.set("setPoint", function(_id, p){
+                    calculator.setExpression({id: _id, latex: `(${p[0]}, ${p[1]})`})
+                })
+                pyodide.globals.set("setExpression", function(expression){
+                    calculator.setExpression(JSON.parse(expression)["setExpression"])
+                })
+                pyodide.globals.set("removeExpression", function(expression){
+                    expression = JSON.parse(expression)
+                    console.log(expression["id"])
+                    calculator.removeExpression({id: expression["id"]})
+                })
             }
 
             function Engage(){
