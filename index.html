@@ -89,20 +89,62 @@
 
                 // prebuilt functions intellisense init
                 const pythonFunctions = [
-                {
-                    label: 'line(id, origin, slope)',
-                    kind: monaco.languages.CompletionItemKind.Function,
-                    documentation: 'Graphs a line',
-                    insertText: 'line()',
-                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
-                },
-                {
-                    label: 'circle(id, origin, radius, xStretch, yStretch)',
-                    kind: monaco.languages.CompletionItemKind.Function,
-                    documentation: 'Graphs a line segment',
-                    insertText: 'circle()',
-                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
-                },
+                    {
+                        label: 'setExpression(expression)',
+                        kind: monaco.languages.CompletionItemKind.Function,
+                        documentation: 'Graphs an expression',
+                        insertText: 'setExpression()',
+                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                    },
+                    {
+                        label: 'removeExpression(expression)',
+                        kind: monaco.languages.CompletionItemKind.Function,
+                        documentation: 'Deletes an expression',
+                        insertText: 'removeExpression()',
+                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                    },
+                    {
+                        label: 'setPoint(id, p)',
+                        kind: monaco.languages.CompletionItemKind.Function,
+                        documentation: 'Returns a point expression object',
+                        insertText: 'setPoint()',
+                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                    },
+                    {
+                        label: 'line.slopeInt(id, slope, yInt)',
+                        kind: monaco.languages.CompletionItemKind.Method,
+                        documentation: 'Returns a line expression object',
+                        insertText: 'line.slopeInt()',
+                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                    },
+                    {
+                        label: 'line.pointSlope(id, point, slope)',
+                        kind: monaco.languages.CompletionItemKind.Method,
+                        documentation: 'Returns a line expression object',
+                        insertText: 'line.pointSlope()',
+                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                    },
+                    {
+                        label: 'vector.fromPoints(id, p1, p2)',
+                        kind: monaco.languages.CompletionItemKind.Method,
+                        documentation: 'Returns a vector expression object',
+                        insertText: 'vector.fromPoints()',
+                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                    },
+                    {
+                        label: 'vector.componentForm(id, origin, components)',
+                        kind: monaco.languages.CompletionItemKind.Method,
+                        documentation: 'Returns a vector expression object',
+                        insertText: 'vector.componentForm()',
+                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                    },
+                    {
+                        label: 'circle(id, origin, radius, xStretch, yStretch)',
+                        kind: monaco.languages.CompletionItemKind.Function,
+                        documentation: 'Graphs a line segment',
+                        insertText: 'circle()',
+                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                    },
                 ];
 
                 monaco.languages.registerCompletionItemProvider('python', {
@@ -174,7 +216,7 @@
 
                 pyodide.globals.set("line", {
                     "slopeInt": function(_id, m, b){
-                        return JSON.stringify({
+                        return pyodide.toPy({
                             "slope": m,
                             "intercept": b,
                             "id": _id,
@@ -182,7 +224,7 @@
                         })
                     },
                     "pointSlope": function(_id, p1, m){
-                        return JSON.stringify({
+                        return pyodide.toPy({
                             "slope": m,
                             "point": p1,
                             "id": _id,
@@ -197,7 +239,7 @@
                     xStretch = xStretch || 1;
                     yStretch = yStretch || 1;
 
-                    return JSON.stringify({
+                    return pyodide.toPy({
                         "origin": origin,
                         "radius": radius,
                         "xStretch": xStretch,
@@ -214,7 +256,7 @@
 
                         calculator.setExpression({id: _id, latex: `[(${p1[0]}, ${p1[1]}), (${p2[0]}, ${p2[1]})]`, lines: true})
 
-                        return JSON.stringify({
+                        return pyodide.toPy({
                             "origin": p1,
                             "magnitude": magnitude,
                             "unit": unit,
@@ -229,7 +271,7 @@
                         const magnitude = Math.sqrt((components[0]**2)+(components[1]**2))
                         const unit = [components[0]/magnitude, components[1]/magnitude]                      
 
-                        return JSON.stringify({
+                        return pyodide.toPy({
                             "origin": origin,
                             "magnitude": magnitude,
                             "unit": unit,
@@ -239,13 +281,18 @@
                     }
                 })
                 pyodide.globals.set("setPoint", function(_id, p){
-                    calculator.setExpression({id: _id, latex: `(${p[0]}, ${p[1]})`})
+                    return pyodide.toPy({
+                            "point": p,
+                            "id": _id,
+                            "setExpression": {id: _id, latex: `(${p[0]}, ${p[1]})`}
+                        })
                 })
                 pyodide.globals.set("setExpression", function(expression){
-                    calculator.setExpression(JSON.parse(expression)["setExpression"])
+                    expression = expression.toJs()
+                    calculator.setExpression(expression["setExpression"])
                 })
                 pyodide.globals.set("removeExpression", function(expression){
-                    expression = JSON.parse(expression)
+                    expression = expression.toJs()
                     console.log(expression["id"])
                     calculator.removeExpression({id: expression["id"]})
                 })
@@ -255,7 +302,8 @@
                 const runBtn = document.getElementById('runBtn');
                 runBtn.onclick = function(){
                     try {
-                        calculator.setBlank();
+                        calculator.removeExpressions(calculator.getState().expressions.list)
+                        clearOutput()
                         pyodide.runPython(editor.getValue());
                     } 
                     catch(errMsg) {
